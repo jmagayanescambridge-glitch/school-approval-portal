@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>School Approval Portal</title>
+
+<style>
+  body { font-family: 'Segoe UI', sans-serif; background:#f4f6f9; margin:0; }
+  .wrap { max-width:960px; margin:40px auto; padding:0 20px; }
+  input { width:100%; padding:14px; border-radius:30px; border:none; box-shadow:0 4px 12px rgba(0,0,0,.1); }
+  button { margin-top:10px; padding:10px 18px; border:none; background:#003e7e; color:#fff; border-radius:20px; cursor:pointer; }
+  .filters { background:#fff; padding:12px; border-radius:10px; margin-top:10px; }
+  .card { background:#fff; padding:18px; border-radius:10px; margin-top:20px; box-shadow:0 4px 12px rgba(0,0,0,.08); border-left:5px solid #003e7e; }
+  .tag { background:#d9e9ff; padding:3px 8px; border-radius:12px; margin-left:8px; }
+  .status { margin-top:10px; font-size:14px; color:#666; }
+</style>
+</head>
+
+<body>
+
+<div class="wrap">
+  <h1>School Approval Portal</h1>
+
+  <input id="search" placeholder="Search anything...">
+  <button onclick="searchData()">Search</button>
+
+  <div class="filters">
+    <label><input type="checkbox" class="f" value="EOIs" checked> EOIs</label>
+    <label><input type="checkbox" class="f" value="PostApprovalExceptions" checked> Post-Approval</label>
+    <label><input type="checkbox" class="f" value="GovernmentPermissions" checked> Gov Permissions</label>
+    <label><input type="checkbox" class="f" value="RegistrationExceptions" checked> Registration</label>
+    <label><input type="checkbox" class="f" value="RetiredExceptions" checked> Retired</label>
+  </div>
+
+  <div class="status" id="status">Loading data...</div>
+  <div id="results"></div>
+</div>
+
+<script>
+// ⚠️ IMPORTANT: Replace this with your FULL SharePoint URL
+const API = "https://cambridgeorg.sharepoint.com/sites/SAP/_api/web/lists/getbytitle('themastersheet')/items?$top=1000";
+
+let dataStore = [];
+
+function escapeHTML(str){
+  if(!str) return "";
+  return str.replace(/[&<>"']/g, m => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  })[m]);
+}
+
+async function loadAll(url = API){
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json;odata=verbose"
+      },
+      credentials: "include" // 🔑 critical for SharePoint auth
+    });
+
+    if(!res.ok){
+      throw new Error("HTTP " + res.status);
+    }
+
+    const json = await res.json();
+    const rows = json.d.results;
+
+    rows.forEach(r=>{
+      const obj = {
+        sheet: r.Title || "",
+        country: r.field_1 || "",
+        how: r.field_3 || "",
+        exception: r.field_11 || "",
+        notes: r.field_6 || "",
+        rule: r.field_15 || "",
+        process: r.field_16 || "",
+        model: r.field_17 || "",
+        blob: ""
+      };
+
+      obj.blob = (
+        obj.country + " " +
+        obj.how + " " +
+        obj.exception + " " +
+        obj.notes + " " +
+        obj.rule + " " +
+        obj.process + " " +
+        obj.model
+      ).toLowerCase();
+
+      dataStore.push(obj);
+    });
+
+    if(json.d.__next){
+      await loadAll(json.d.__next);
+    } else {
+      document.getElementById("status").innerText =
+        `Loaded ${dataStore.length} records`;
+    }
+
+  } catch(err){
+    console.error(err);
+    document.getElementById("status").innerText =
+      "⚠️ Failed to load data. Possible causes: login required, CORS, or network restriction.";
+  }
+}
+
+function searchData(){
+  const q = document.getElementById('search').value.toLowerCase().trim();
+  const keys = q.split(/\s+/).filter(k=>k.length>1);
+
+  const allowed = [...document.querySelectorAll('.f')]
+    .filter(x=>x.checked)
+    .map(x=>x.value);
+
+  const res = dataStore.filter(r=>{
+    if(!allowed.includes(r.sheet)) return false;
+    return keys.every(k=>r.blob.includes(k));
+  });
+
+  render(res);
+}
+
+function render(rows){
+  const el = document.getElementById('results');
+  el.innerHTML = '';
+
+  if(rows.length===0){
+    el.innerHTML = '<p>No results</p>';
+    return;
+  }
+
+  rows.forEach(r=>{
+    el.innerHTML += `
+      <div class="card">
+        <h3>${escapeHTML(r.country)} <span class="tag">${escapeHTML(r.sheet)}</span></h3>
+        <p><b>How:</b> ${escapeHTML(r.how)}</p>
+        <p><b>Exception:</b> ${escapeHTML(r.exception)}</p>
+        <p><b>Rule:</b> ${escapeHTML(r.rule)}</p>
+        <p><b>Process:</b> ${escapeHTML(r.process)}</p>
+        <p><b>Model:</b> ${escapeHTML(r.model)}</p>
+      </div>
+    `;
+  });
+}
+
+// Load immediately
+loadAll();
+</script>
+
+</body>
+</html>
